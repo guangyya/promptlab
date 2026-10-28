@@ -1,6 +1,7 @@
 import themeData from './theme-data.json' with { type: 'json' };
 import communityData from './community-data.json' with { type: 'json' };
 import { communitySource } from './community-source.mjs';
+import { applyPromptOptions } from './prompt-options.mjs';
 const sha = themeData.sha;
 const definitions = [
  ['agnoster','Agnoster','Powerline segments with contextual status.','single','Powerline','#89b4d4'],
@@ -41,7 +42,7 @@ themes.push({id:'studio',name:'Studio',description:'Build a prompt with your cho
 const scenarios=['clean','dirty','failed','long','venv','ssh','conflict'];
 const accents={original:null,mint:'green',cyan:'cyan',lavender:'magenta',amber:'yellow',blue:'blue'};
 const symbols=['auto','❯','➜','λ','$'];
-export const allowedCommands=['pwd','ls','ls -la','git status','git status --short','git branch','git log --oneline -3','whoami','true','false','echo hello','clear','cd ..','cd ~','cd ~/code/promptlab','help'];
+export const allowedCommands=['pwd','ls','ls -la','git status','git status --short','git branch','git log --oneline -3','git diff --stat','git merge --continue','whoami','hostname','python --version','which python','cat missing.txt','true','false','echo hello','clear','cd ..','cd ~','cd ~/code/promptlab','help'];
 export const upstream={sha,license:themeData.license};
 export function getTheme(c) { return themes.find(t=>t.id===c.theme) || (c.imported?.id===c.theme ? c.imported : null); }
 export function cleanName(value) { return String(value||'').replace(/[\r\n\x00-\x1f]/g,'').slice(0,64); }
@@ -56,7 +57,10 @@ export function config(raw={}) {
  if(!Object.hasOwn(accents,raw.accent))throw Error('Unknown accent.');
  if(!symbols.includes(raw.symbol))throw Error('Unknown prompt symbol.');
  if(!scenarios.includes(raw.scenario))throw Error('Unknown scenario.');
- return {theme:raw.theme,name:cleanName(raw.name),accent:raw.accent,symbol:raw.symbol,scenario:raw.scenario,git:raw.git!==false,user:raw.user!==false,multiline:raw.multiline!==false,cols:Math.round(Math.max(40,Math.min(180,Number(raw.cols)||80))),rows:24,...(imported?{imported:{id:imported.id,source:imported.source,name:cleanName(imported.name)||'Imported theme',url:imported.url,repo:cleanName(imported.repo),sha:/^[0-9a-f]{40}$/.test(imported.sha||'')?imported.sha:undefined,group:'imported',tags:['Imported'],color:'#a6a6a6',layout:imported.layout==='double'?'double':'single',description:cleanName(imported.description||imported.repo),license:/Permission is hereby granted/i.test(String(imported.licenseText||''))?'MIT':'Not verified',licenseText:String(imported.licenseText||'').slice(0,16000)}}:{})};
+ const context=raw.context??'theme',directory=raw.directory??'theme',commandLine=raw.commandLine??'theme';
+ if(!['theme','user','host','user-host'].includes(context)||!['theme','basename','full'].includes(directory)||!['theme','newline'].includes(commandLine))throw Error('Unknown prompt option.');
+ if(raw.sourceOverride!==undefined&&(typeof raw.sourceOverride!=='string'||!raw.sourceOverride.trim()||raw.sourceOverride.length>64000||/[\x00\x1b]/.test(raw.sourceOverride)))throw Error('Invalid edited source.');
+ return {theme:raw.theme,name:cleanName(raw.name),accent:raw.accent,symbol:raw.symbol,scenario:raw.scenario,git:raw.git!==false,user:raw.user!==false,multiline:raw.multiline!==false,context,directory,commandLine,clock:raw.clock===true,...(raw.sourceOverride!==undefined?{sourceOverride:raw.sourceOverride}:{}),cols:Math.round(Math.max(40,Math.min(180,Number(raw.cols)||80))),rows:24,...(imported?{imported:{id:imported.id,source:imported.source,name:cleanName(imported.name)||'Imported theme',url:imported.url,repo:cleanName(imported.repo),sha:/^[0-9a-f]{40}$/.test(imported.sha||'')?imported.sha:undefined,group:'imported',tags:['Imported'],color:'#a6a6a6',layout:imported.layout==='double'?'double':'single',description:cleanName(imported.description||imported.repo),license:/Permission is hereby granted/i.test(String(imported.licenseText||''))?'MIT':'Not verified',licenseText:String(imported.licenseText||'').slice(0,16000)}}:{})};
 }
 function dependencySource(c,t) {
  const color=accents[c.accent]||(t.id==='spaceship'?'cyan':'blue'), symbol=c.symbol==='auto'?(t.id==='spaceship'||t.id==='dracula'?'➜':'❯'):c.symbol;
@@ -68,6 +72,7 @@ function dependencySource(c,t) {
 }
 export function themeSource(c) {
  const t=getTheme(c); if(!t)throw Error('Unknown theme.');
+ if(c.sourceOverride!==undefined)return c.sourceOverride;
  const color=accents[c.accent]||'green', symbol=c.symbol==='auto'?'❯':c.symbol;
  let code;
  if(c.theme==='studio') {
@@ -95,5 +100,6 @@ export function themeSource(c) {
   }
   if(!c.git)code+='\nfunction git_prompt_info() { :; }\nfunction git_prompt_status() { :; }\n'+(c.theme==='agnoster'?'function prompt_git() { :; }\n':'')+(c.theme==='avit'?'function _git_time_since_commit() { :; }\n':'');
  }
+ code=applyPromptOptions(c,code);
  return `# ${cleanName(c.name||t.name)}\n# Source: ${t.url||'Promptlab Studio'}\n${t.sha?'# Revision: '+t.sha+'\n':''}# License: ${t.license||'Not verified'}\n# Requires Oh My Zsh${t.dependency?' and '+t.name:''}.\n\n${code}`;
 }

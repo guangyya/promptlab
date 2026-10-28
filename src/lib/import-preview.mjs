@@ -1,7 +1,7 @@
 // A deliberately small, non-executing parser for literal Zsh prompt templates.
 export function inspectSource(source) {
- const assignments={};
- const regex=/\b([A-Za-z_][A-Za-z0-9_]*)\s*(\+?=)\s*\$?(['"])((?:\\[\s\S]|(?!\3)[\s\S])*?)\3/g;
+ const assignments=Object.create(null);
+ const regex=/^[ \t]*(?:(?:export|local|typeset)\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*(\+?=)\s*\$?(['"])((?:\\[\s\S]|(?!\3)[\s\S])*?)\3/gm;
  for(const match of source.matchAll(regex))assignments[match[1]]=(match[2]==='+='?(assignments[match[1]]||''):'')+match[4];
  let left=assignments.PROMPT||assignments.PS1, right=assignments.RPROMPT||assignments.RPS1||'';
  if(!left)return {supported:false,reason:'This theme builds its prompt with functions. Its source is available below.'};

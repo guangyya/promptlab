@@ -26,4 +26,28 @@ const complex=await importGitHubFile(discovery,'themes/complex.zsh-theme',{fetch
 const fallback=await discoverGitHub('https://github.com/example/simple',{fetcher:async url=>{if(url.startsWith('https://api.github.com/'))return new Response('limit',{status:403});if(url.endsWith('/main/simple.zsh-theme'))return new Response(simple);return new Response('missing',{status:404});}});assert.equal(fallback.files[0].path,'simple.zsh-theme');
 const known=await discoverGitHub('https://github.com/sindresorhus/pure',{fetcher:()=>{throw Error('Known themes need no request');}});assert.equal(known.builtin[0].id,'pure');
 console.log('PASS GitHub repository discovery, file import, MIT attribution, source-only fallback and rate-limit fallback');
+
+
+// Rich transcripts exercise success, failure and environment-specific state.
+for(const scenario of scenarios){const c={...DEFAULT,scenario};const out=renderSnapshot(c);assert.match(out,/pwd/);assert.match(out,/ls|python|git diff/);assert(out.length>renderSnapshot({...c,compact:true}).length);}
+assert.match(renderSnapshot(DEFAULT),/cat: missing.txt: No such file or directory/);
+assert.match(renderSnapshot({...DEFAULT,scenario:'venv'}),/\.venv\/bin\/python/);
+assert.match(renderSnapshot({...DEFAULT,scenario:'ssh'}),/hostname/);
+assert.match(renderSnapshot({...DEFAULT,scenario:'conflict'}),/unmerged files/);
+const enhanced=normalizeDraft({...DEFAULT,theme:'robbyrussell',context:'user-host',directory:'full',commandLine:'newline',clock:true});
+const enhancedPrompt=prompt(enhanced,{cwd:'/home/alex/code/promptlab',scenario:'dirty',exit:0});
+assert.match(enhancedPrompt,/alex@workstation/);assert.match(enhancedPrompt,/~\/code\/promptlab/);assert.match(enhancedPrompt,/12:34:56/);assert.match(enhancedPrompt,/\r\n/);
+const enhancedSource=themeSource(enhanced);assert.match(enhancedSource,/%n@%m/);assert.match(enhancedSource,/%~/);assert.match(enhancedSource,/RPROMPT\+=/);assert.deepEqual(decodeDraft(encodeDraft(enhanced)),enhanced);
+const {checkSource}=await import('../src/lib/source-check.mjs');
+const edited="# An editable prompt\nPROMPT='%F{cyan}%n@%m%f %~ ❯ '\nRPROMPT='%F{242}%*%f'\n";
+assert.equal(checkSource(edited).errors.length,0);assert(checkSource(edited).preview.supported);
+assert.match(checkSource("PROMPT='unfinished").errors[0],/Close the single quote/);
+assert(checkSource('').errors.length);assert(checkSource('a'.repeat(64001)).errors.length);assert(checkSource('PROMPT=\x1b').errors.length);
+const manual=normalizeDraft({...enhanced,sourceOverride:edited});assert.equal(themeSource(manual),edited);assert(exportTheme(manual).source.startsWith(edited));assert.match(renderSnapshot(manual),/alex@workstation/);assert.deepEqual(decodeDraft(encodeDraft(manual)),manual);
+assert.doesNotMatch(renderSnapshot(normalizeDraft({...DEFAULT,sourceOverride:"PROMPT='$(a_function)'\n"})),/git status/);
+assert.match(renderSnapshot(normalizeDraft({...DEFAULT,sourceOverride:"PROMPT='$(a_function)'\n"})),/Preview unavailable/);
+assert.throws(()=>normalizeDraft({...DEFAULT,sourceOverride:123}));assert.throws(()=>normalizeDraft({...DEFAULT,context:'injected'}));
+console.log('PASS rich transcripts, guided prompt options, edited-source validation/export/preview and share roundtrips');
+
+assert.equal(inspectSource("PROMPT='%n %~ ❯ '\n# PROMPT='commented out'").left,'%n %~ ❯ ');
 console.log('All static checks passed.');

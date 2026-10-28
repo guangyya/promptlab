@@ -1,6 +1,24 @@
 # Promptlab — static Zsh theme playground
 
+[Try Promptlab online](https://guangyya.github.io/promptlab/) · [Browse the source](https://github.com/guangyya/promptlab)
+
+Choose a Zsh theme, explore realistic terminal scenarios, customize its prompt, and download or share the result.
+
 The default app is **100% static**. The production artifact contains HTML, JavaScript, CSS, fonts and licenses. It needs no hosting backend, WebSocket, database, Functions, Workers or VPS. GitHub imports read public GitHub endpoints directly from the browser. Deploy it on GitHub Pages or Cloudflare Pages.
+
+## In the playground
+
+**Customize a familiar theme without writing Zsh.** Add the user and host to Robbyrussell, change the directory format, show a clock, and inspect command failures.
+
+![Robbyrussell with user and hostname, full path, clock and a failed command](docs/images/customize-prompt.png)
+
+**Compare themes and scenarios.** Browse the community library, switch terminal colors, and try a Python environment alongside clean and failed-command scenarios.
+
+![Pure in the community library with a Python environment, Nord colors and scenario comparisons](docs/images/community-scenarios.png)
+
+**Edit the source when you need more control.** Basic checks flag unfinished literal prompt quotes; supported expressions can be previewed after applying the changes.
+
+![Online source editor with an editable user, host, directory and right-hand clock](docs/images/source-editor.png)
 
 ## Run
 
@@ -27,12 +45,12 @@ Stop the server already using port 4317 first. `vite preview` is for local inspe
 ## Features
 
 - 31 presets: 18 Oh My Zsh themes, 12 community themes, and a configurable Studio builder. Source links, pinned revisions and license notices are included.
-- Per-theme browser adapters for seven scenarios: clean, dirty, failure, long paths, venv, SSH and conflict.
-- Accent, Git visibility, prompt symbols for all preset themes, editable theme names, and Studio's layout/user-host controls.
+- Per-theme browser adapters for seven scenarios: clean, dirty, failure, long paths, venv, SSH and conflict. Main previews include several commands with directory listings, output, errors and environment details; comparison cards use shorter transcripts.
+- Accent, Git visibility, prompt symbols and editable names. Robbyrussell, Simple, Cloud and Awesomepanda also offer identity, directory, command-line layout and clock controls; Studio has its own layout and identity controls.
 - Terminal fonts, palettes, sizes and column counts, displayed through xterm.js.
 - An interactive command **simulator** retaining directory and exit status. Type directly in the terminal, edit with arrow keys, recall history, and continue after invalid commands.
 - Browser-generated `.zsh-theme` downloads containing the upstream source, supported modifications, provenance and upstream license notice.
-- Source inspection, setup instructions, favorites, local drafts and JSON import/export.
+- Online source editing with basic checks, a prompt-expression guide, setup instructions, favorites, local drafts and JSON import/export.
 - Share links carrying the draft in the URL fragment. They preserve `/repository/` paths and restore on opening or fragment changes. No upload or storage service is involved.
 - Self-hosted fonts, relative asset paths, mobile layout and a GitHub Pages workflow. A neutral app background and compact desktop layout fit 1366×768 and 1280×720 screens; theme and scenario lists scroll independently.
 
@@ -64,6 +82,16 @@ Exports contain actual upstream Zsh code with the selected supported modificatio
 GitHub import accepts public repository URLs and direct theme file links. The browser discovers theme files, retrieves source and available license text, and previews supported literal prompt expressions without executing code. Function-built or unsupported imported prompts remain available as source and downloads with an explicit unavailable-preview notice. GitHub rate limits are handled with common raw-file fallbacks; private repositories and unusual branch/file layouts may require a direct file URL. Draft JSON import/export is also available. Arbitrary Shell execution is not provided. Fonts and terminal palettes affect preview only, not `.zsh-theme` exports. Downloads require Oh My Zsh and sometimes a Nerd Font.
 
 A future WebAssembly-based Zsh/Linux runtime could improve fidelity while retaining static hosting; it is not included.
+
+## Source editing and guided options
+
+For Robbyrussell, Simple, Cloud and Awesomepanda, use **Prompt details → Identity → User and host** to add the current shell user and hostname. Directory format, a separate command line and a right-hand clock are also available. These are Promptlab adaptations of the bundled templates, rather than universal upstream configuration variables. **Help** explains common Zsh expressions and can start a simple editable prompt.
+
+Open **Source → Edit source**, change the code and choose **Apply source**. The editor checks for empty or oversized source, binary escape characters and unfinished literal prompt quotes. It does **not** validate full Zsh syntax or execute the source. Simple supported expressions receive an approximate preview; unsupported functions or engine-based source display an explicit unavailable-preview message.
+
+Applied edits are the source of truth for downloads, saved drafts, JSON exports and share links. Prompt controls pause while source edits are pending or active, so they cannot silently overwrite your code. **Cancel** discards pending changes; **Use controls** restores generated source from the retained control settings. Changing themes starts a fresh configuration. Terminal palettes and fonts remain adjustable.
+
+To check downloaded syntax locally, use `zsh -n your-theme.zsh-theme`. Runtime behavior still depends on the selected theme's engine, plugins and terminal.
 
 ## Cloudflare Pages
 
@@ -98,9 +126,11 @@ References: [Vite static deployment](https://vite.dev/guide/static-deploy.html),
 
 ## Verification
 
-`npm test` checks 217 theme/scenario combinations, 372 accent/Git/export combinations, 124 explicit symbol combinations, Unicode sharing and imported-source roundtrips, custom names, input bounds, recoverable command errors, and GitHub discovery/import/rate-limit fallbacks.
+`npm test` checks 217 theme/scenario combinations, 372 accent/Git/export combinations, 124 explicit symbol combinations, Unicode sharing and imported-source roundtrips, custom names, input bounds, recoverable command errors, GitHub discovery/import/rate-limit fallbacks, realistic transcripts, guided options and edited-source validation/export/share roundtrips.
 
 `scripts/browser-check.mjs` checks direct terminal input and error recovery, visible symbols, custom filenames, light/dark palettes, laptop fit, English-only user copy, community source/requirements, GitHub imports, sharing, drafts, mobile layout, **zero hosting backend requests and zero WebSockets**. GitHub API/raw requests are expected only when importing. Run against plain static hosting, not Vite development mode (which uses hot-reload WebSockets). It uses Playwright with installed Chrome; set `PLAYWRIGHT_MODULE` if Playwright is available elsewhere. Set `BASE_URL` to test a repository subdirectory. Screenshots go under `artifacts/`.
+
+`scripts/editor-check.mjs` exercises rich transcripts, the repository link, accent alignment, guided options, exact edited-source downloads, quote-error recovery, preview fallback, persistence, sharing and compact laptop layouts. Run it with the same Playwright setup. Set `CAPTURE_DOCS=1` against the local static preview to refresh the three README screenshots in `docs/images/`.
 
 ## Optional original native prototype
 

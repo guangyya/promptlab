@@ -1,6 +1,8 @@
 import { themes, config, themeSource, upstream, allowedCommands, getTheme, fileStem } from './theme-source.mjs';
 
 import { inspectSource, renderImported } from './import-preview.mjs';
+import { checkSource } from './source-check.mjs';
+import { hasPromptOptions, contextText } from './prompt-options.mjs';
 
 export const DEFAULT = { theme: 'agnoster', accent: 'original', symbol: 'auto', scenario: 'dirty', git: true, user: true, multiline: true, cols: 80, fontSize: 13, palette: 'neutral', font: 'nerd' };
 const names = { mint: 'green', cyan: 'cyan', lavender: 'magenta', amber: 'yellow', blue: 'blue' };
@@ -17,7 +19,8 @@ export function normalizeDraft(value) {
 }
 export function encodeDraft(value) {
   const bytes = new TextEncoder().encode(JSON.stringify(normalizeDraft(value)));
-  return btoa(String.fromCharCode(...bytes));
+  let binary='';for(let offset=0;offset<bytes.length;offset+=8192)binary+=String.fromCharCode(...bytes.subarray(offset,offset+8192));
+  return btoa(binary);
 }
 export function decodeDraft(value) {
   if (value.length > 200000) throw new Error('This draft link is too large. Import a draft file instead.');
@@ -26,7 +29,7 @@ export function decodeDraft(value) {
 export async function localRequest(url, body) {
   if (url === '/api/catalog') return { themes, sha: upstream.sha, engine: 'Browser simulation', commands: allowedCommands };
   if (url === '/api/source') { const c = normalizeDraft(body); return { source: themeSource(c), filename: `${fileStem(c)}.zsh-theme`, config: c }; }
-  if (url === '/api/render') return { output: renderSnapshot(normalizeDraft(body)) };
+  if (url === '/api/render') return { output: renderSnapshot(body) };
   throw new Error('Unknown local operation');
 }
 export function exportTheme(value) {
@@ -37,22 +40,27 @@ const plain = text => text.replace(/\x1b\[[0-9;]*m/g, '');
 function width(text) {
   return Array.from(plain(text)).reduce((n, ch) => n + (/\p{Mark}/u.test(ch) ? 0 : /[\u1100-\u115f\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\uff01-\uff60]/u.test(ch) ? 2 : 1), 0);
 }
-function stateFor(c) { return { cwd: '/home/alex/code/promptlab' + (c.scenario === 'long' ? '/packages/design-system/components/navigation/experimental' : ''), exit: c.scenario === 'failed' ? 1 : 0, scenario: c.scenario }; }
+function stateFor(c) { return { cwd: '/home/alex/code/promptlab' + (c.scenario === 'long' ? '/packages/design-system/components/navigation/experimental' : ''), exit: 0, scenario: c.scenario }; }
 const homePath = cwd => cwd === '/home/alex' ? '~' : cwd.replace(/^\/home\/alex\//, '~/');
 function pathPart(cwd, count = 0) { const p = homePath(cwd); return count && p.split('/').length > count ? p.split('/').slice(-count).join('/') : p; }
 
-export function prompt(c, state) {
+export function prompt(c, state, command='') {
   const color = original => c.accent === 'original' ? original : names[c.accent];
   const repo = state.cwd === '/home/alex/code/promptlab' || state.cwd.startsWith('/home/alex/code/promptlab/');
-  const git = c.git && repo;
+  const git = (c.sourceOverride!==undefined||c.git) && repo;
   const dirty = ['dirty', 'failed', 'venv', 'conflict'].includes(state.scenario);
   const branch = 'feat/new-prompt';
   const cwd = homePath(state.cwd), basename = state.cwd.split('/').pop() || '/';
+  const path = original => hasPromptOptions(c.theme)&&c.directory&&c.directory!=='theme'?(c.directory==='full'?cwd:basename):original;
   const identity = 'alex@workstation';
   const symbol = fallback => c.symbol === 'auto' ? fallback : c.symbol;
   const endSymbol = () => c.symbol === 'auto' ? '' : fg(color('green'), symbol('❯')) + ' ';
   let left = '', right = '';
-  if (c.theme === 'agnoster') {
+  if(c.sourceOverride!==undefined) {
+    const parsed=checkSource(c.sourceOverride).preview;
+    if(!parsed.supported)return fg('grey','Preview unavailable for edited source. Open Source for details.')+'\r\n';
+    ({left,right}=renderImported(parsed,{cwd,git,branch,dirty,exit:state.exit,fg}));
+  } else if (c.theme === 'agnoster') {
     let previous;
     const block = (bg, text) => { const n = numbers[bg] - 30; const transition = previous !== undefined ? `\x1b[${numbers[previous]};${40 + n}m\ue0b0` : `\x1b[${40 + n}m`; previous = bg; return transition + `\x1b[${bg === 'black' ? 37 : 30}m ${text} `; };
     left = block('black', `${state.exit ? fg('red', '✘ ') + '\x1b[37;40m' : ''}${identity}`) + block(color('blue'), cwd);
@@ -60,7 +68,7 @@ export function prompt(c, state) {
     if (state.scenario === 'venv') left += block(color('blue'), '.venv');
     left += `\x1b[49;${numbers[previous]}m\ue0b0${RESET} ` + endSymbol();
   } else if (c.theme === 'robbyrussell') {
-    left = fg(state.exit ? 'red' : color('green'), symbol('➜'), true) + '  ' + fg(color('cyan'), basename);
+    left = fg(state.exit ? 'red' : color('green'), symbol('➜'), true) + '  ' + fg(color('cyan'), path(basename));
     if (git) left += ' ' + fg(color('blue'), 'git:(', true) + fg('red', branch) + fg(color('blue'), ')') + (dirty ? fg('yellow', ' ✗') : '');
     left += ' ';
   } else if (c.theme === 'bira') {
@@ -135,13 +143,13 @@ export function prompt(c, state) {
     left+=endSymbol();
   } else if(['simple','arrow','fishy','cloud','lambda','minimal','awesomepanda','tonotdo','dst','terminalparty'].includes(c.theme)) {
     const branchText=git?fg(color('green'),branch)+(dirty?fg('red',' *'):''):'';
-    if(c.theme==='simple')left=fg(color('green'),cwd)+(git?' '+fg('blue','(')+branchText+fg('blue',')'):'')+' '+endSymbol();
+    if(c.theme==='simple')left=fg(color('green'),path(cwd))+(git?' '+fg('blue','(')+branchText+fg('blue',')'):'')+' '+endSymbol();
     if(c.theme==='arrow'){left=fg('yellow',basename+' '+symbol('➤'))+' ';right=git?'git:'+branch+(dirty?'*':''):'';}
     if(c.theme==='fishy'){left=fg(color('green'),'alex')+'@workstation '+fg(color('green'),cwd.replace(/\/([^/])[^/]+(?=\/)/g,'/$1'))+symbol('>')+' ';right=(state.exit?fg('red','1 '):'')+branchText;}
-    if(c.theme==='cloud')left=fg(color('cyan'),'☁ ')+fg(color('green'),basename)+' '+(git?'['+branchText+'] ':'')+fg('blue',symbol('%')+' ');
+    if(c.theme==='cloud')left=fg(color('cyan'),'☁ ')+fg(color('green'),path(basename))+' '+(git?'['+branchText+'] ':'')+fg('blue',symbol('%')+' ');
     if(c.theme==='lambda')left=symbol('λ')+' '+cwd+'/ '+branchText+' ';
     if(c.theme==='minimal')left=pathPart(state.cwd,2)+' '+(git?'['+branch+(dirty?'●':'')+'] ':'')+symbol('»')+' ';
-    if(c.theme==='awesomepanda')left=fg(state.exit?'red':color('green'),symbol('➜'))+' '+fg(color('cyan'),basename)+' '+(git?'git:('+branchText+') ':'');
+    if(c.theme==='awesomepanda')left=fg(state.exit?'red':color('green'),symbol('➜'))+' '+fg(color('cyan'),path(basename))+' '+(git?'git:('+branchText+') ':'');
     if(c.theme==='tonotdo'){left=fg(color('cyan'),'alex')+fg('magenta','➜')+fg(color('green'),pathPart(state.cwd,3))+(git?'('+branchText+')':'')+symbol('»')+' ';right='[12:34:56]';}
     if(c.theme==='dst'){left=(state.exit?fg('red','FAIL')+'\r\n':'')+fg('magenta','alex')+'@'+fg('yellow','workstation')+': '+fg(color('blue'),cwd)+branchText+'\r\n'+symbol('$')+' ';right=fg('green','[12:34:56]');}
     if(c.theme==='terminalparty'){left=fg(state.exit?'red':'green',symbol('%'))+' ';right=pathPart(state.cwd,2)+(git?' ('+branch+(dirty?' ⚡':'')+')':'')+' workstation';}
@@ -151,9 +159,14 @@ export function prompt(c, state) {
     left += (c.multiline ? '\r\n' : ' ') + fg(state.exit ? 'red' : color('green'), symbol('❯')) + ' ';
     if (state.exit) right = fg('red', 'exit 1');
   }
+  if(c.sourceOverride===undefined&&hasPromptOptions(c.theme)) {
+    if(c.context&&c.context!=='theme')left=fg(242,contextText(c.context))+' '+left;
+    if(c.commandLine==='newline')left+='\r\n'+fg(state.exit?'red':color('green'),symbol(c.theme==='cloud'?'%':c.theme==='simple'?'❯':'➜'))+' ';
+    if(c.clock)right+=(right?' ':'')+fg(242,'12:34:56');
+  }
   // Right prompt placement is an approximation; the browser does not execute ZLE.
   const lastLine = left.split('\r\n').at(-1);
-  if (right && width(lastLine) + width(right) + 2 < c.cols) left += `\x1b[${c.cols - width(right)}G${right}\x1b[${width(lastLine) + 1}G`;
+  if (right && width(lastLine) + width(command) + width(right) + 2 < c.cols) left += `\x1b[${c.cols - width(right)}G${right}\x1b[${width(lastLine) + 1}G`;
   return left;
 }
 
@@ -166,6 +179,10 @@ function commandResult(command, state) {
   if (command === 'false' || command === 'true' || command === 'clear') return '';
   if (command === 'pwd') return state.cwd + '\r\n';
   if (command === 'whoami') return 'alex\r\n';
+  if (command === 'hostname') return 'workstation\r\n';
+  if (command === 'python --version') return 'Python 3.12.7\r\n';
+  if (command === 'which python') return (state.scenario==='venv'?'/home/alex/code/promptlab/.venv/bin/python':'/usr/bin/python')+'\r\n';
+  if (command === 'cat missing.txt') { state.exit=1; return fg('red','cat: missing.txt: No such file or directory')+'\r\n'; }
   if (command === 'echo hello') return 'hello\r\n';
   if (command === 'help') return 'Commands you can try:\r\n' + allowedCommands.join(', ') + '\r\n';
   if (command.startsWith('cd ')) {
@@ -177,18 +194,32 @@ function commandResult(command, state) {
   if (command === 'ls' || command === 'ls -la') return command === 'ls' ? 'README.md  ' + fg('blue', 'src') + (dirty ? '  notes.md' : '') + '\r\n' : 'total 16\r\ndrwxr-xr-x  alex  staff  128 Oct 28 12:34 .\r\n-rw-r--r--  alex  staff   42 Oct 28 12:34 README.md\r\ndrwxr-xr-x  alex  staff   96 Oct 28 12:34 src\r\n';
   if (command.startsWith('git ') && !repo) { state.exit = 128; return 'fatal: not a git repository (or any of the parent directories): .git\r\n'; }
   if (command === 'git status --short') return state.scenario === 'conflict' ? fg('red', 'UU README.md') + '\r\n' : dirty ? ' ' + fg('red', 'M') + ' src/app.ts\r\n' + fg('red', '??') + ' notes.md\r\n' : '';
+  if (command === 'git diff --stat') return dirty?' README.md  | 4 ++--\r\n src/app.ts | 8 ++++++--\r\n 2 files changed, 8 insertions(+), 4 deletions(-)\r\n':'';
+  if (command === 'git merge --continue') { if(state.scenario!=='conflict'){state.exit=128;return 'fatal: There is no merge in progress\r\n';}state.exit=1;return fg('red','error: Committing is not possible because you have unmerged files.')+'\r\n'; }
   if (command === 'git status') return 'On branch feat/new-prompt\r\n' + (state.scenario === 'conflict' ? 'You have unmerged paths.\r\n  both modified: README.md\r\n' : dirty ? 'Changes not staged for commit:\r\n  ' + fg('red', 'modified: src/app.ts') + '\r\nUntracked files:\r\n  ' + fg('red', 'notes.md') + '\r\n' : 'nothing to commit, working tree clean\r\n');
   if (command === 'git branch') return '* ' + fg('green', 'feat/new-prompt') + '\r\n  main\r\n';
-  if (command === 'git log --oneline -3') return fg('yellow', 'a1b2c3d') + ' (HEAD -> feat/new-prompt, main) Create a little space for ideas\r\n';
+  if (command === 'git log --oneline -3') return fg('yellow', 'a1b2c3d') + ' (HEAD -> feat/new-prompt) Add theme presets\r\n'+fg('yellow','e4f5a6b')+' Improve prompt spacing\r\n'+fg('yellow','c7d8e9f')+' Create the playground\r\n';
   return '';
 }
-function initial(c, state) {
-  if(c.imported&&!inspectSource(c.imported.source).supported)return '\x1b[2J\x1b[H'+fg('white',c.imported.name)+'\r\n\r\n'+fg('grey','Preview unavailable for this theme.')+'\r\n'+fg('grey','Open Source to inspect and download it.')+'\r\n';
-  const commands = { clean: 'git log --oneline -3', dirty: 'git status --short', failed: 'false', long: 'pwd', venv: 'ls', ssh: 'whoami', conflict: 'git status --short' };
-  const command = commands[c.scenario];
-  return '\x1b[2J\x1b[H' + prompt(c, state) + command + '\r\n' + commandResult(command, state) + prompt(c, state);
+export function previewInfo(c) {
+ if(c.sourceOverride!==undefined)return checkSource(c.sourceOverride).preview;
+ return c.imported?inspectSource(c.imported.source):{supported:true};
 }
-export function renderSnapshot(value) { const c = normalizeDraft(value); return initial(c, stateFor(c)); }
+function initial(c, state, compact=false) {
+  const info=previewInfo(c);
+  if(!info.supported)return '\x1b[2J\x1b[H'+fg('white',c.name||getTheme(c).name)+'\r\n\r\n'+fg('grey','Preview unavailable for this source.')+'\r\n'+fg('grey','Open Source to inspect and download it.')+'\r\n';
+  const commands = {
+   clean:['pwd','ls','git log --oneline -3','git status --short'],
+   dirty:['pwd','ls','cat missing.txt','git status --short'],
+   failed:['pwd','ls','cat missing.txt'],
+   long:['pwd','ls','git status --short'],
+   venv:['pwd','which python','python --version','git status --short'],
+   ssh:['whoami','hostname','pwd','ls'],
+   conflict:['pwd','git status --short','git diff --stat','git merge --continue'],
+  };
+  return '\x1b[2J\x1b[H'+(compact?commands[c.scenario].slice(-2):commands[c.scenario]).map(command=>prompt(c,state,command)+command+'\r\n'+commandResult(command,state)).join('')+prompt(c,state);
+}
+export function renderSnapshot(value) { const c = normalizeDraft(value); return initial(c, stateFor(c),value.compact===true); }
 export function createBrowserSession(value, callbacks) {
   const c = normalizeDraft(value), state = stateFor(c);
   let closed = false;
