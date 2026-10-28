@@ -1,0 +1,14 @@
+node_modules/
+dist/
+__pycache__/
+.DS_Store
+.local/
+artifacts/
+preview.png
+
+vendor/ohmyzsh/
+
+.env
+.env.*
+!.env.example
+*.log

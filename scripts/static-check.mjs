@@ -1,0 +1,29 @@
+import assert from'node:assert/strict';
+import{themes,upstream,config,themeSource,fileStem}from'../src/lib/theme-source.mjs';
+import{DEFAULT,normalizeDraft,encodeDraft,decodeDraft,exportTheme,renderSnapshot,createBrowserSession,prompt}from'../src/lib/browser-engine.mjs';
+import{discoverGitHub,importGitHubFile,parseGitHubURL}from'../src/lib/github-import.mjs';
+import{inspectSource}from'../src/lib/import-preview.mjs';
+assert.equal(themes.length,31);assert.equal(themes.filter(t=>t.group==='community').length,12);
+const scenarios=['clean','dirty','failed','long','venv','ssh','conflict'];
+for(const theme of themes){
+ assert.match(theme.licenseText,/Permission (is hereby granted|to use, copy)/i);
+ if(theme.group!=='custom')assert.match(theme.url,/^https:\/\/github.com\//);
+ for(const scenario of scenarios){const c=normalizeDraft({...DEFAULT,theme:theme.id,scenario});const output=renderSnapshot(c);assert(output.startsWith('\x1b[2J\x1b[H'));assert.doesNotMatch(output,/undefined|NaN/);if(scenario==='dirty')assert.match(output,/notes\.md/);if(scenario==='conflict')assert.match(output,/README\.md/);}
+ for(const symbol of['❯','➜','λ','$']){const c=normalizeDraft({...DEFAULT,theme:theme.id,symbol});assert(prompt(c,{cwd:'/home/alex/code/promptlab',scenario:'dirty',exit:0}).includes(symbol),theme.id+' '+symbol);assert(themeSource(c).includes(symbol));}
+ for(const accent of['original','mint','cyan','lavender','amber','blue'])for(const git of[true,false]){const c=normalizeDraft({...DEFAULT,theme:theme.id,accent,git});const exported=exportTheme(c);assert(exported.source.startsWith(themeSource(c)));assert(/Permission (is hereby granted|to use, copy)/.test(exported.source));assert.equal(exported.filename,fileStem(c)+'.zsh-theme');if(!git)assert.doesNotMatch(prompt(c,{cwd:'/home/alex/code/promptlab',scenario:'dirty',exit:0}),/feat\/new-prompt/);}
+}
+console.log('PASS 31 licensed themes, 217 scenarios, 124 symbols and 372 export combinations');
+const named=normalizeDraft({...DEFAULT,name:'Night Watch',symbol:'λ',palette:'light'});assert.equal(exportTheme(named).filename,'night-watch.zsh-theme');assert.deepEqual(decodeDraft(encodeDraft(named)),named);assert.throws(()=>decodeDraft('%%%'));assert.throws(()=>config({...DEFAULT,accent:'constructor'}));assert.throws(()=>normalizeDraft({...DEFAULT,theme:'../../.zshrc'}));
+let output='',error='',ready=0;const session=createBrowserSession(DEFAULT,{onData:(text,done)=>{output+=text;done?.();},onError:e=>error=e,onReady:()=>ready++});await new Promise(r=>queueMicrotask(r));assert.match(output,/notes\.md/);
+session.send(JSON.stringify({type:'command',command:'not-a-command'}));assert.match(error,/Command not available/);const afterError=ready;session.send(JSON.stringify({type:'command',command:'echo hello'}));assert.match(output,/hello\r\n/);assert(ready>afterError);session.send(JSON.stringify({type:'command',command:'cd ~'}));session.send(JSON.stringify({type:'command',command:'pwd'}));assert.match(output,/\/home\/alex\r\n/);session.close();const before=output;session.send(JSON.stringify({type:'command',command:'pwd'}));assert.equal(output,before);
+assert.equal((themeSource(normalizeDraft({...DEFAULT,theme:'bira',symbol:'$'})).match(/local user_symbol=/g)||[]).length,1);
+console.log('PASS custom names, Unicode share links, recoverable command errors and session state');
+assert.throws(()=>parseGitHubURL('javascript:alert(1)'));assert.throws(()=>parseGitHubURL('https://example.com/repo'));assert.equal(parseGitHubURL('https://github.com/example/theme/blob/main/a.zsh-theme').path,'a.zsh-theme');
+const sha='a'.repeat(40),simple="PROMPT='%F{cyan}%n@%m %~ ❯ %f'\n";
+const fetcher=async url=>{if(url.includes('/commits/'))return new Response(JSON.stringify({sha}));if(url.includes('/git/trees/'))return new Response(JSON.stringify({tree:[{type:'blob',path:'themes/simple.zsh-theme',size:90},{type:'blob',path:'themes/complex.zsh-theme',size:90},{type:'blob',path:'README.md',size:20}]}));if(url.endsWith('/simple.zsh-theme'))return new Response(simple);if(url.endsWith('/complex.zsh-theme'))return new Response("PROMPT='$(unsupported_prompt)'\n");if(url.endsWith('/LICENSE'))return new Response(upstream.license);return new Response('not found',{status:404});};
+const discovery=await discoverGitHub('https://github.com/example/collection',{fetcher});assert.equal(discovery.files.length,2);const imported=await importGitHubFile(discovery,'themes/simple.zsh-theme',{fetcher});assert.equal(imported.license,'MIT');assert(inspectSource(imported.source).supported);const custom=normalizeDraft({...DEFAULT,theme:imported.id,imported,name:'Imported Night'});assert.deepEqual(decodeDraft(encodeDraft(custom)),custom);assert.match(renderSnapshot(custom),/alex/);assert.match(exportTheme(custom).source,/example\/collection/);
+const complex=await importGitHubFile(discovery,'themes/complex.zsh-theme',{fetcher});assert(!inspectSource(complex.source).supported);assert.match(renderSnapshot(normalizeDraft({...DEFAULT,theme:complex.id,imported:complex})),/Preview unavailable/);assert.doesNotMatch(renderSnapshot(normalizeDraft({...DEFAULT,theme:complex.id,imported:complex})),/git status/);
+const fallback=await discoverGitHub('https://github.com/example/simple',{fetcher:async url=>{if(url.startsWith('https://api.github.com/'))return new Response('limit',{status:403});if(url.endsWith('/main/simple.zsh-theme'))return new Response(simple);return new Response('missing',{status:404});}});assert.equal(fallback.files[0].path,'simple.zsh-theme');
+const known=await discoverGitHub('https://github.com/sindresorhus/pure',{fetcher:()=>{throw Error('Known themes need no request');}});assert.equal(known.builtin[0].id,'pure');
+console.log('PASS GitHub repository discovery, file import, MIT attribution, source-only fallback and rate-limit fallback');
+console.log('All static checks passed.');
